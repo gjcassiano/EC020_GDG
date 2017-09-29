@@ -31,6 +31,14 @@ const unsigned char WebSide[] = {
 "<li><b>Embedded EMAC Ethernet Controller</b></li>\r\n"
 "</ul>\r\n"
 "\r\n"
+"\r\n"
+"-------------------------------------------------------------------------------------"
+"PAGE CONTENT\r\n"
+"BODY%"
+"\r\n"
+"-------------------------------------------------------------------------------------"
+"Page count: AD1%\r\n"
+
 "</body>\r\n"
 "</html>\r\n"
 "\r\n"};

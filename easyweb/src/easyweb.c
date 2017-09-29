@@ -155,11 +155,11 @@ int main (void)
 
     light_init();
     light_enable();
-    while(1){
-
-    	upadateSensorLuz(1, 25);
-    	showLuzPercente();
-    }
+//    while(1){
+//
+//    	upadateSensorLuz(1, 25);
+//    	showLuzPercente();
+//    }
 
 	TCPLowLevelInit();
 
@@ -187,6 +187,8 @@ int main (void)
   while (1)                                      // repeat forever
   {
 
+  	upadateSensorLuz(1, 25);
+  	showLuzPercente();
     if (!(SocketStatus & SOCK_ACTIVE)) TCPPassiveOpen();   // listen for incoming TCP-connection
     DoNetworkStuff();                                      // handle network and easyWEB-stack
                                                            // events
@@ -356,42 +358,50 @@ unsigned int GetTempVal(void)
 // Code Red - new version of InsertDynamicValues()
 void InsertDynamicValues(void)
 {
-  unsigned char *Key;
-           char NewKey[6];
+  unsigned char *key;
+  char NewKey[10];
   unsigned int i;
   
   if (TCPTxDataCount < 4) return;                     // there can't be any special string
   
-  Key = TCP_TX_BUF;
+  key = TCP_TX_BUF;
   
   for (i = 0; i < (TCPTxDataCount - 3); i++)
   {
-    if (*Key == 'A')
-     if (*(Key + 1) == 'D')
-       if (*(Key + 3) == '%')
-         switch (*(Key + 2))
-         {
-           case '8' :                                 // "AD8%"?
-           {
-             sprintf(NewKey, "%04d", GetAD7Val());     // insert pseudo-ADconverter value
-             memcpy(Key, NewKey, 4);                  
-             break;
-           }
-           case '7' :                                 // "AD7%"?
-           {
-             sprintf(NewKey, "%3u", adcValue);     // copy saved value from previous read
-             memcpy(Key, NewKey, 3);                 
-             break;
-           }
-		   case '1' :                                 // "AD1%"?
-           {
- 			 sprintf(NewKey, "%4u", ++aaPagecounter);    // increment and insert page counter
-             memcpy(Key, NewKey, 4);  
-//			 *(Key + 3) = ' ';  
-             break;
-           }
-         }
-    Key++;
+	if(*key =='B' && *(key + 1) == 'O' && *(key + 2) == 'D' && *(key + 3) == 'Y'){
+
+		sprintf(NewKey, "%s", "Temperature sensor: ");     // insert pseudo-ADconverter value
+		sprintf(NewKey, "%s",buff_luz_p );     // insert pseudo-ADconverter value
+		//memcpy(key, NewKey, 10);
+		break;
+	}
+
+//    if (*key == 'A')
+//     if (*(key + 1) == 'D')
+//       if (*(key + 3) == '%')
+//         switch (*(key + 2))
+//         {
+//           case '8' :                                 // "AD8%"?
+//           {
+//             sprintf(NewKey, "%04d", GetAD7Val());     // insert pseudo-ADconverter value
+//             memcpy(Key, NewKey, 4);
+//             break;
+//           }
+//           case '7' :                                 // "AD7%"?
+//           {
+//             sprintf(NewKey, "%3u", adcValue);     // copy saved value from previous read
+//             memcpy(Key, NewKey, 3);
+//             break;
+//           }
+//		   case '1' :                                 // "AD1%"?
+//           {
+// 			 sprintf(NewKey, "%4u", ++aaPagecounter);    // increment and insert page counter
+//             memcpy(Key, NewKey, 4);
+////			 *(Key + 3) = ' ';
+//             break;
+//           }
+//         }
+    key++;
   }
 }
 
