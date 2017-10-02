@@ -23,6 +23,7 @@
 #include "stdlib.h"
 #include "stdio.h"
 #include "stdint.h"
+
 #include "string.h"
 
 //Include the driver of temperature.
@@ -58,9 +59,18 @@
 #include "lpc17xx_ssp.h"
 #include "oled.h"
 
+// import the top library....
+#include "top.h"
+
+
 // CodeRed - added for use in dynamic side of web page
 unsigned int aaPagecounter=0;
 unsigned int adcValue = 0;
+
+// print text in console
+void print(char* text) {
+	fprintf(stderr, text);
+}
 
 static void init_ssp(void)
 {
@@ -118,7 +128,7 @@ static void init_i2c(void)
 	I2C_Cmd(LPC_I2C2, ENABLE);
 }
 
-int32_t getLuz(){
+int getLuz(){
 	return light_read();
 }
 
@@ -128,18 +138,20 @@ void upadateSensorLuz(int x, int y) {
 	oled_putString(x,y, (uint8_t*)buff_luz, OLED_COLOR_BLACK, OLED_COLOR_WHITE);
 }
 char buff_luz_p[50];
+int getLuzPercent() {
+	return getLuz() / 9.72;
+}
 void showLuzPercente() {
-	int luxp = getLuz() / 9.72;
+	int luxp = getLuzPercent();
 	sprintf((char*)buff_luz_p, "Luz per: %d ", luxp);
 	oled_putString(0,35, (uint8_t*)buff_luz_p, OLED_COLOR_BLACK, OLED_COLOR_WHITE);
-	oled_fillRect(0,50,100,55,OLED_COLOR_WHITE);
+	oled_fillRect(0,50,luxp*0.8,55,OLED_COLOR_WHITE);
 	oled_fillRect(0,50,(100 - luxp)*0.8 ,55,OLED_COLOR_BLACK);
 }
 
-int main (void)
-{
+int main (void){
+	print("Starting...\n");
 	uint8_t buf[50];
-
     init_ssp();
     init_i2c();
 
@@ -155,45 +167,32 @@ int main (void)
 
     light_init();
     light_enable();
-//    while(1){
-//
-//    	upadateSensorLuz(1, 25);
-//    	showLuzPercente();
-//    }
-
+    top_init();
 	TCPLowLevelInit();
 
-/*
-  *(unsigned char *)RemoteIP = 24;               // uncomment those lines to get the
-  *((unsigned char *)RemoteIP + 1) = 8;          // quote of the day from a real
-  *((unsigned char *)RemoteIP + 2) = 69;         // internet server! (gateway must be
-  *((unsigned char *)RemoteIP + 3) = 7;          // set to your LAN-router)
+	HTTPStatus = 0;                                // clear HTTP-server's flag register
 
-  TCPLocalPort = 2025;
-  TCPRemotePort = TCP_PORT_QOTD;
+	TCPLocalPort = TCP_PORT_HTTP;                  // set port we want to listen to
 
-  TCPActiveOpen();
+//	char buf[12];
+//	sprintf((char*)buf, "%d.%d.%d.%d", MYIP_1, MYIP_2, MYIP_3, MYIP_4);
 
-  while (SocketStatus & SOCK_ACTIVE)             // read the quote from memory
-  {                                              // by using the hardware-debugger
-    DoNetworkStuff();
-  }
-*/
 
-  HTTPStatus = 0;                                // clear HTTP-server's flag register
+	int x = 0;
+	  while (1) {
+		x++;
+		if (x > 1000){
+			upadateSensorLuz(1, 25);
+			showLuzPercente();
+			top_update_values(aaPagecounter, buf, getLuz(), getLuzPercent());
+			x = 0;
+		}
 
-  TCPLocalPort = TCP_PORT_HTTP;                  // set port we want to listen to
-
-  while (1)                                      // repeat forever
-  {
-
-  	upadateSensorLuz(1, 25);
-  	showLuzPercente();
-    if (!(SocketStatus & SOCK_ACTIVE)) TCPPassiveOpen();   // listen for incoming TCP-connection
-    DoNetworkStuff();                                      // handle network and easyWEB-stack
-                                                           // events
-    HTTPServer();
-  }
+		if (!(SocketStatus & SOCK_ACTIVE)) TCPPassiveOpen();   // listen for incoming TCP-connection
+		DoNetworkStuff();                                      // handle network and easyWEB-stack
+															   // events
+		HTTPServer();
+	  }
 }
 
 // This function implements a very simple dynamic HTTP-server.
@@ -223,6 +222,9 @@ void HTTPServer(void)
       {
         if (!(HTTPStatus & HTTP_SEND_PAGE))           // 1st time, include HTTP-header
         {
+          print("Make response.\n");
+          ++aaPagecounter;
+
           memcpy(TCP_TX_BUF, GetResponse, sizeof(GetResponse) - 1);
           memcpy(TCP_TX_BUF + sizeof(GetResponse) - 1, PWebSide, MAX_TCP_TX_DATA_SIZE - sizeof(GetResponse) + 1);
           HTTPBytesToSend -= MAX_TCP_TX_DATA_SIZE - sizeof(GetResponse) + 1;
@@ -234,7 +236,8 @@ void HTTPServer(void)
           HTTPBytesToSend -= MAX_TCP_TX_DATA_SIZE;
           PWebSide += MAX_TCP_TX_DATA_SIZE;
         }
-          
+
+
         TCPTxDataCount = MAX_TCP_TX_DATA_SIZE;   // bytes to xfer
         InsertDynamicValues();                   // exchange some strings...
         TCPTransmitTxBuffer();                   // xfer buffer
@@ -270,6 +273,62 @@ unsigned int GetAD7Val(void)
   adcValue = (aaScrollbar / 10) * 1000/1024;
   return aaScrollbar;
 }
+
+void InsertDynamicValues(void)
+{
+  unsigned char *key;
+  char NewKey[9000];
+  unsigned int i;
+
+  if (TCPTxDataCount < 4) return;                     // there can't be any special string
+
+  key = TCP_TX_BUF;
+  struct TOP_INFO* info = getTopInfo();
+
+
+  for (i = 0; i < (TCPTxDataCount - 3); i++)
+  {
+
+    if (*key == 'A')
+     if (*(key + 1) == 'D')
+       if (*(key + 3) == '%')
+         switch (*(key + 2))
+         {
+           case '1' ://CONTADOR                                 // "AD1%"?
+			 {
+
+				 sprintf(NewKey, "%4u",info->counter);    // increment and insert page counter
+				 memcpy(key, NewKey, 4);
+
+				 break;
+			 }
+           case '2' : { // ip
+
+					char buf[12];
+					sprintf((char*)buf, "%d.%d.%d.%d", MYIP_1, MYIP_2, MYIP_3, MYIP_4);
+
+					sprintf(NewKey, "%s",buf);
+					memcpy(key, NewKey,sizeof(buf));
+
+				   break;
+				 }
+           case '3' : //luz
+				 {
+				   sprintf(NewKey, "%4u",  info->luz);
+				   memcpy(key, NewKey, 4);
+				   break;
+				 }
+           case '4' : //luz percente
+				 {
+				   sprintf(NewKey, "%3d",  info->luzPercent);
+				   memcpy(key, NewKey, 3);
+				   break;
+				 }
+         }
+    key++;
+  }
+
+
 
 // Code Red - Original MSP430 version of GetAD7Val() removed
 /*
@@ -356,146 +415,6 @@ unsigned int GetTempVal(void)
 // with dynamic values (AD-converter results)
 
 // Code Red - new version of InsertDynamicValues()
-void InsertDynamicValues(void)
-{
-  unsigned char *key;
-  char NewKey[10];
-  unsigned int i;
-  
-  if (TCPTxDataCount < 4) return;                     // there can't be any special string
-  
-  key = TCP_TX_BUF;
-  
-  for (i = 0; i < (TCPTxDataCount - 3); i++)
-  {
-	if(*key =='B' && *(key + 1) == 'O' && *(key + 2) == 'D' && *(key + 3) == 'Y'){
 
-		sprintf(NewKey, "%s", "Temperature sensor: ");     // insert pseudo-ADconverter value
-		sprintf(NewKey, "%s",buff_luz_p );     // insert pseudo-ADconverter value
-		//memcpy(key, NewKey, 10);
-		break;
-	}
-
-//    if (*key == 'A')
-//     if (*(key + 1) == 'D')
-//       if (*(key + 3) == '%')
-//         switch (*(key + 2))
-//         {
-//           case '8' :                                 // "AD8%"?
-//           {
-//             sprintf(NewKey, "%04d", GetAD7Val());     // insert pseudo-ADconverter value
-//             memcpy(Key, NewKey, 4);
-//             break;
-//           }
-//           case '7' :                                 // "AD7%"?
-//           {
-//             sprintf(NewKey, "%3u", adcValue);     // copy saved value from previous read
-//             memcpy(Key, NewKey, 3);
-//             break;
-//           }
-//		   case '1' :                                 // "AD1%"?
-//           {
-// 			 sprintf(NewKey, "%4u", ++aaPagecounter);    // increment and insert page counter
-//             memcpy(Key, NewKey, 4);
-////			 *(Key + 3) = ' ';
-//             break;
-//           }
-//         }
-    key++;
-  }
 }
 
-
-// Code Red - commented out original InsertDynamicValues()
-/*
-void InsertDynamicValues(void)
-{
-  unsigned char *Key;
-  unsigned char NewKey[5];
-  unsigned int i;
-  
-  if (TCPTxDataCount < 4) return;                     // there can't be any special string
-  
-  Key = TCP_TX_BUF;
-  
-  for (i = 0; i < (TCPTxDataCount - 3); i++)
-  {
-    if (*Key == 'A')
-     if (*(Key + 1) == 'D')
-       if (*(Key + 3) == '%')
-         switch (*(Key + 2))
-         {
-           case '7' :                                 // "AD7%"?
-           {
-             sprintf(NewKey, "%3u", GetAD7Val());     // insert AD converter value
-             memcpy(Key, NewKey, 3);                  // channel 7 (P6.7)
-             break;
-           }
-           case 'A' :                                 // "ADA%"?
-           {
-             sprintf(NewKey, "%3u", GetTempVal());    // insert AD converter value
-             memcpy(Key, NewKey, 3);                  // channel 10 (temp.-diode)
-             break;
-           }
-         }
-    Key++;
-  }
-}
-
-// Code Red - End of original InsertDynamicValues ()
-*/
-
-// Code Red - Deleted InitOsc() and InitPorts() as not required
-// by LPC 1776
-
-/*
-// enables the 8MHz crystal on XT1 and use
-// it as MCLK
-
-void InitOsc(void)
-{
-  WDTCTL = WDTPW | WDTHOLD;                      // stop watchdog timer
-
-  BCSCTL1 |= XTS;                                // XT1 as high-frequency
-  _BIC_SR(OSCOFF);                               // turn on XT1 oscillator
-                          
-  do                                             // wait in loop until crystal is stable 
-    IFG1 &= ~OFIFG;
-  while (IFG1 & OFIFG);
-
-  BCSCTL1 |= DIVA0;                              // ACLK = XT1 / 2
-  BCSCTL1 &= ~DIVA1;
-  
-  IE1 &= ~WDTIE;                                 // disable WDT int.
-  IFG1 &= ~WDTIFG;                               // clear WDT int. flag
-  
-  WDTCTL = WDTPW | WDTTMSEL | WDTCNTCL | WDTSSEL | WDTIS1; // use WDT as timer, flag each
-                                                           // 512 pulses from ACLK
-                                                           
-  while (!(IFG1 & WDTIFG));                      // count 1024 pulses from XT1 (until XT1's
-                                                 // amplitude is OK)
-
-  IFG1 &= ~OFIFG;                                // clear osc. fault int. flag
-  BCSCTL2 = SELM0 | SELM1;                       // set XT1 as MCLK
-}  
-
-void InitPorts(void)
-{
-  P1SEL = 0;                                     // switch all unused ports to output
-  P1OUT = 0;                                     // (rem.: ports 3 & 5 are set in "cs8900.c")
-  P1DIR = 0xFF;
-
-  P2SEL = 0;
-  P2OUT = 0;
-  P2DIR = 0xFF;
-
-  P4SEL = 0;
-  P4OUT = 0;
-  P4DIR = 0xFF;
-
-  P6SEL = 0x80;                                  // use P6.7 for the ADC module
-  P6OUT = 0;
-  P6DIR = 0x7F;                                  // all output except P6.7
-}
-
-*/
